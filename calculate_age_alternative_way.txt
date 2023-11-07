@@ -1,0 +1,59 @@
+The age calculation does not currently count for leap years:
+DATEDIFF(day, sr.birthday, CONVERT(DATETIME2, st.start_at)) / 365, 0)
+
+Since a year does not always have 365 days, this calculation would remove the effect of leap years, one day every four years in calculation.
+
+I made a query that illustrates this problem better:
+
+-- Problem with datediff with days and leap years.
+
+-- Year should be 0 and not 1.
+DECLARE @dob date = '2012/02/29';
+DECLARE @today date = '2013/02/28';
+
+-- This query incorrectly returns 1:
+SELECT DATEDIFF(day, @dob, @today) / 365 AS DateDiff;
+
+-- This query correctly returns 0:
+SELECT DATEDIFF(year, @dob, @today) -
+    (
+        CASE WHEN MONTH(@dob) > MONTH(@today)
+        OR MONTH(@dob) =
+            MONTH(@today)
+        AND DAY(@dob) >
+            DAY(@today)
+        THEN 1 ELSE 0 END
+    )
+	
+This is an edge case so I do not mark this specification off, but consider using the following query instead (you would need to adjust it to work with the rest of your queries)
+-- DATEDIFF(year, r.birthday,
+--     CONVERT(Datetime, SUBSTRING([started_at], 1, 19),120)) AS [rider_age]
+-- The above DATEDIFF method does not return correct age when the year is
+-- incomplete. For example, when dob is '2000/02/29' and started_at is
+-- '2001/01/25', the result is 1 although it should be 0. The below method
+-- correctly deals with non-full years such as this.
+-- There is also a problem with datediff w/ day in leap years as mentioned above.
+(DATEDIFF(year, r.birthday,
+    CONVERT(Datetime, SUBSTRING([started_at], 1, 19),120)) - (
+        CASE WHEN MONTH(r.birthday) > MONTH(CONVERT(Datetime, SUBSTRING([started_at], 1, 19),120))
+        OR MONTH(r.birthday) =
+            MONTH(CONVERT(Datetime, SUBSTRING([started_at], 1, 19),120))
+        AND DAY(r.birthday) >
+            DAY(CONVERT(Datetime, SUBSTRING([started_at], 1, 19),120))
+        THEN 1 ELSE 0 END
+    )) AS [rider_age]
+	
+	
+Step-by-step breakdown of the query:
+
+It first extracts the year component from r.birthday and the started_at timestamp (which appears to be a string, hence the SUBSTRING and CONVERT functions). The DATEDIFF function then calculates the difference in years between these two dates.
+
+It creates a CASE statement to determine if the rider's birthday has not yet occurred in the started_at year. This is done by comparing the month and day of the r.birthday and started_at timestamp.
+
+If the rider's birthday in the started_at year has not occurred yet, then the CASE statement will return 1, else it returns 0.
+
+This value (1 or 0) is then subtracted from the year difference calculated in step 1.
+
+This is necessary because simply subtracting the birth year from the started_at year could result in an age that's one year too many if the rider's birthday hasn't happened yet in the started_at year. By subtracting the 1 or 0 from the CASE statement, the code ensures the age calculation is accurate.
+
+So, the result of the whole code is the age of the rider at the time the started_at event happened, stored in the alias rider_age.
